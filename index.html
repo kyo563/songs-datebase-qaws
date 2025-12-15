@@ -147,6 +147,12 @@
   <div class="card">
     <div class="row">
       <input id="q" type="search" placeholder="曲名／アーティスト名で検索（例：群青日和／椎名林檎）" autocomplete="off">
+      <select id="sort">
+        <option value="artist-asc">アーティスト名（昇順）</option>
+        <option value="artist-desc">アーティスト名（降順）</option>
+        <option value="title-asc">曲名（昇順）</option>
+        <option value="title-desc">曲名（降順）</option>
+      </select>
     </div>
     <div class="muted" id="status">読み込み中…</div>
   </div>
@@ -182,7 +188,7 @@
     const API_URL = 'https://script.google.com/macros/s/AKfycbz9TUzC2C2dQgUbdCX1jAXNKIb4WpalGo08Ha8jdmIZ-Gx5GX-ie-kuaC9urKATEPTp/exec';
     const HARD_LIMIT = 200;
 
-    const state = { rows: [], debounce: null };
+    const state = { rows: [], debounce: null, sort: 'artist-asc' };
     let callbackCalled = false;
     let fallbackStarted = false;
     let lastJsonpUrl = '';
@@ -322,12 +328,6 @@
           return { artist: (r.artist ?? '').toString(), title: (r.title ?? '').toString() };
         }).filter(r => ((r.artist + r.title).trim() !== ''));
 
-        rows.sort((x,y) => {
-          const a1 = x.artist.trim(), a2 = y.artist.trim();
-          if (a1 !== a2) return a1.localeCompare(a2, 'ja');
-          return (x.title.trim()).localeCompare(y.title.trim(), 'ja');
-        });
-
         state.rows = rows;
         $('status').textContent = `読み込み完了：${rows.length}件`;
         log('info', 'Loaded rows', rows.length, 'sample=', rows[0] || '(none)');
@@ -353,7 +353,20 @@
           return normalize(artist).includes(q) || normalize(title).includes(q);
         });
       }
-      const rows = filtered;
+      const rows = [...filtered].sort((a,b)=>{
+        const at = a.title.trim();
+        const bt = b.title.trim();
+        const aa = a.artist.trim();
+        const ba = b.artist.trim();
+
+        switch (state.sort) {
+          case 'title-asc': return at.localeCompare(bt, 'ja') || aa.localeCompare(ba, 'ja');
+          case 'title-desc': return bt.localeCompare(at, 'ja') || ba.localeCompare(aa, 'ja');
+          case 'artist-desc': return ba.localeCompare(aa, 'ja') || bt.localeCompare(at, 'ja');
+          case 'artist-asc':
+          default: return aa.localeCompare(ba, 'ja') || at.localeCompare(bt, 'ja');
+        }
+      });
 
       $('status').textContent = q
         ? `${rows.length}件ヒット（全${state.rows.length}件中）`
@@ -455,6 +468,7 @@
 
     /* ===== イベント ===== */
     $('q').addEventListener('input', scheduleSearch);
+    $('sort').addEventListener('change', (ev)=>{ state.sort = ev.target.value; render(); });
 
     $('btnCopyLog').addEventListener('click', async ()=>{
       const ok = await copyText(logLines.join('\n'));
