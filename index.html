@@ -198,6 +198,7 @@
 
     const state = { rows: [], debounce: null };
     let callbackCalled = false;
+    let fallbackStarted = false;
     let lastJsonpUrl = '';
 
     /* ===== ログ機構（画面内に出す） ===== */
@@ -258,6 +259,37 @@
     function showToast(msg){
       const t = $('toast'); t.textContent = msg; t.classList.add('show');
       setTimeout(()=> t.classList.remove('show'), 1400);
+    }
+
+    function markFallbackStarted(reason){
+      if (callbackCalled || fallbackStarted) return false;
+      fallbackStarted = true;
+      log('warn', 'Start fallback:', reason);
+      return true;
+    }
+
+    async function loadFallback(){
+      if (!markFallbackStarted('fallback guard')) return;
+      const url = 'data.json';
+      try {
+        $('status').textContent = '本番APIに接続できないため、サンプルデータを読み込みます…';
+        log('info', 'Fallback fetch start', url);
+
+        const res = await fetch(url, { cache: 'no-store' });
+        if (!res.ok) throw new Error('HTTP ' + res.status);
+        const json = await res.json();
+
+        const payload = Array.isArray(json?.rows)
+          ? json
+          : { ok: true, rows: Array.isArray(json) ? json : [] };
+
+        onGviz(payload);
+        $('status').textContent = 'サンプルデータを読み込みました';
+        log('info', 'Fallback load success', { rows: payload?.rows?.length });
+      } catch (e) {
+        $('status').textContent = 'データ取得に失敗しました（本番・ローカルともに失敗）';
+        log('error', 'Fallback load failed', e);
+      }
     }
 
     async function copyText(text){
@@ -420,6 +452,7 @@
       s.onerror = ()=> {
         $('status').textContent = 'データ取得に失敗しました（ネットワーク/ブロック）';
         log('error', 'JSONP script load error', lastJsonpUrl);
+        loadFallback();
       };
 
       document.head.appendChild(s);
@@ -430,6 +463,7 @@
           $('status').textContent = 'データ取得に失敗しました（callback未呼び出し）';
           log('warn', 'Callback not called within timeout. Possible causes: permission, API returns HTML, blocked, wrong URL.');
           log('warn', 'Try opening this URL directly:', lastJsonpUrl);
+          loadFallback();
         }
       }, 6000);
 

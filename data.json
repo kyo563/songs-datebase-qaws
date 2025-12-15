@@ -1,0 +1,9 @@
+{
+  "ok": true,
+  "rows": [
+    { "artist": "サンプルアーティスト", "title": "サンプル曲" },
+    { "artist": "椎名林檎", "title": "群青日和" },
+    { "artist": "RADWIMPS", "title": "前前前世" },
+    { "artist": "米津玄師", "title": "Lemon" }
+  ]
+}
