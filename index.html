@@ -15,6 +15,8 @@
       --line: #e5e7eb;
       --thead: #ffe0b5;
       --focus: #3897c9;
+      --logbg: #0b1220;
+      --logtext: #d1e7ff;
     }
     * { box-sizing: border-box; }
     body {
@@ -68,6 +70,7 @@
       padding: 8px 12px;
       font-size: 14px;
       cursor: pointer;
+      white-space: nowrap;
     }
     .btn:hover { background: #f9fafb; }
     .btn:active { transform: translateY(1px); }
@@ -96,8 +99,35 @@
     th:nth-child(1), td:nth-child(1) { width: 35%; }
     th:nth-child(2), td:nth-child(2) { width: 50%; }
     th:nth-child(3), td:nth-child(3) { width: 15%; }
-
     .ops { display:flex; justify-content:flex-end; }
+
+    /* ===== デバッグログ ===== */
+    details.debug { margin-top: 10px; }
+    details.debug summary { cursor: pointer; font-weight: 700; }
+    .logbox {
+      margin-top: 8px;
+      background: var(--logbg);
+      color: var(--logtext);
+      border-radius: 12px;
+      padding: 10px;
+      border: 1px solid rgba(255,255,255,.08);
+      font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", monospace;
+      font-size: 12px;
+      line-height: 1.55;
+      max-height: 260px;
+      overflow: auto;
+      white-space: pre-wrap;
+      word-break: break-word;
+    }
+    .log-actions { display:flex; gap:8px; margin-top:8px; flex-wrap: wrap; }
+    .pill {
+      display:inline-block;
+      padding: 2px 8px;
+      border-radius: 999px;
+      font-size: 12px;
+      border: 1px solid var(--line);
+      background: #fff;
+    }
 
     @media (max-width: 768px) {
       table { display: none; }
@@ -139,23 +169,131 @@
     <div class="muted" id="hint">検索結果がここに表示されます。</div>
     <div id="table"></div>
     <div id="mblist" class="mobile-list" style="display:none;"></div>
+
+    <!-- ===== デバッグログ（原因特定用） ===== -->
+    <details class="debug">
+      <summary>デバッグログ（原因特定用）</summary>
+      <div class="muted" style="margin-top:6px;">
+        <span class="pill" id="pillApi">API: -</span>
+        <span class="pill" id="pillCb">callback: -</span>
+      </div>
+      <div id="log" class="logbox">（ここにログが出ます）</div>
+      <div class="log-actions">
+        <button class="btn" id="btnCopyLog">ログをコピー</button>
+        <button class="btn" id="btnClearLog">ログをクリア</button>
+        <button class="btn" id="btnPing">APIテスト（別タブ）</button>
+      </div>
+      <div class="muted" style="margin-top:6px;">
+        ※ まずは「APIテスト（別タブ）」で <code>onGviz(...)</code> が返るか確認してください。
+      </div>
+    </details>
   </div>
 
   <div id="toast" class="toast" role="status" aria-live="polite">コピーしました</div>
 
   <script>
     /* ===== 設定 ===== */
-    // あなたのデプロイURLに差し替え済み
     const API_URL = 'https://script.google.com/macros/s/AKfycbz9TUzC2C2dQgUbdCX1jAXNKIb4WpalGo08Ha8jdmIZ-Gx5GX-ie-kuaC9urKATEPTp/exec';
-
     const HARD_LIMIT = 200;
+
     const state = { rows: [], debounce: null };
+    let callbackCalled = false;
+    let lastJsonpUrl = '';
+
+    /* ===== ログ機構（画面内に出す） ===== */
+    const LOG_MAX_LINES = 400;
+    const logLines = [];
+    function $(id){ return document.getElementById(id); }
+
+    function safeStr(x){
+      try{
+        if (typeof x === 'string') return x;
+        if (x instanceof Error) return (x.stack || x.message || String(x));
+        return JSON.stringify(x);
+      } catch {
+        return String(x);
+      }
+    }
+
+    function log(level, ...args){
+      const ts = new Date().toISOString().replace('T',' ').replace('Z','');
+      const msg = args.map(safeStr).join(' ');
+      const line = `[${ts}] [${level}] ${msg}`;
+
+      logLines.push(line);
+      while (logLines.length > LOG_MAX_LINES) logLines.shift();
+
+      const el = $('log');
+      if (el) {
+        el.textContent = logLines.join('\n');
+        el.scrollTop = el.scrollHeight;
+      }
+    }
+
+    // consoleも画面ログへミラー
+    (function hookConsole(){
+      const orig = {
+        log: console.log.bind(console),
+        warn: console.warn.bind(console),
+        error: console.error.bind(console),
+      };
+      console.log = (...a)=>{ log('console.log', ...a); orig.log(...a); };
+      console.warn = (...a)=>{ log('console.warn', ...a); orig.warn(...a); };
+      console.error = (...a)=>{ log('console.error', ...a); orig.error(...a); };
+    })();
+
+    // JS例外も捕捉
+    window.addEventListener('error', (ev)=>{
+      log('window.error', ev.message, 'at', ev.filename + ':' + ev.lineno + ':' + ev.colno);
+    });
+    window.addEventListener('unhandledrejection', (ev)=>{
+      log('unhandledrejection', ev.reason);
+    });
+
+    function setPills(){
+      $('pillApi').textContent = 'API: ' + API_URL;
+      $('pillCb').textContent  = 'callback: onGviz';
+    }
+
+    function showToast(msg){
+      const t = $('toast'); t.textContent = msg; t.classList.add('show');
+      setTimeout(()=> t.classList.remove('show'), 1400);
+    }
+
+    async function copyText(text){
+      try{
+        if (navigator.clipboard?.writeText) await navigator.clipboard.writeText(text);
+        else {
+          const ta = document.createElement('textarea');
+          ta.value = text; document.body.appendChild(ta);
+          ta.select(); document.execCommand('copy'); ta.remove();
+        }
+        return true;
+      } catch {
+        return false;
+      }
+    }
+
+    async function copyPair(title, artist){
+      const t = (title||'').trim();
+      const a = (artist||'').trim();
+      const text = (t && a) ? `${t} / ${a}` : (t || a);
+      const ok = await copyText(text);
+      showToast(ok ? ('コピーしました：' + text) : 'コピーに失敗しました');
+    }
+
+    function normalize(s){ return (s||'').toString().toLowerCase().replace(/\s+/g,' ').trim(); }
+    function scheduleSearch(){ clearTimeout(state.debounce); state.debounce = setTimeout(render, 220); }
 
     /* ===== JSONP コールバック ===== */
     function onGviz(payload) {
+      callbackCalled = true;
       try {
+        log('jsonp.callback', 'onGviz called', { ok: payload?.ok, rowsType: typeof payload?.rows, len: payload?.rows?.length });
+
         if (!payload || !payload.ok || !Array.isArray(payload.rows)) {
           $('status').textContent = 'データ取得に失敗しました（不正なレスポンス）';
+          log('error', 'Invalid payload', payload);
           return;
         }
 
@@ -174,40 +312,14 @@
 
         state.rows = rows;
         $('status').textContent = `読み込み完了：${rows.length}件`;
+        log('info', 'Loaded rows', rows.length, 'sample=', rows[0] || '(none)');
         render();
       } catch (e) {
         $('status').textContent = '読み込みに失敗しました';
-        console.error(e);
+        log('error', 'Exception in onGviz', e);
       }
     }
     window.onGviz = onGviz;
-
-    /* ===== ユーティリティ ===== */
-    function $(id){ return document.getElementById(id); }
-    function normalize(s){ return (s||'').toString().toLowerCase().replace(/\s+/g,' ').trim(); }
-    function scheduleSearch(){ clearTimeout(state.debounce); state.debounce = setTimeout(render, 220); }
-
-    function showToast(msg){
-      const t = $('toast'); t.textContent = msg; t.classList.add('show');
-      setTimeout(()=> t.classList.remove('show'), 1400);
-    }
-
-    async function copyPair(title, artist){
-      const t = (title||'').trim();
-      const a = (artist||'').trim();
-      const text = (t && a) ? `${t} / ${a}` : (t || a);
-      try{
-        if (navigator.clipboard?.writeText) await navigator.clipboard.writeText(text);
-        else {
-          const ta = document.createElement('textarea');
-          ta.value = text; document.body.appendChild(ta);
-          ta.select(); document.execCommand('copy'); ta.remove();
-        }
-        showToast('コピーしました：' + text);
-      } catch {
-        showToast('コピーに失敗しました');
-      }
-    }
 
     /* ===== 描画 ===== */
     function render(){
@@ -290,16 +402,59 @@
 
     /* ===== データ取得開始（JSONP） ===== */
     (function load(){
+      setPills();
+      log('info', 'Page loaded', { href: location.href, ua: navigator.userAgent });
+
       const s = document.createElement('script');
-      const url = `${API_URL}?callback=onGviz&limit=${HARD_LIMIT}&v=${Date.now()}`;
-      s.src = url;
-      s.onerror = ()=> { $('status').textContent = 'データ取得に失敗しました（ネットワーク/ブロック）'; };
+      lastJsonpUrl = `${API_URL}?callback=onGviz&limit=${HARD_LIMIT}&v=${Date.now()}`;
+
+      log('info', 'JSONP request start', lastJsonpUrl);
+
+      s.src = lastJsonpUrl;
+
+      s.onload = ()=> {
+        log('info', 'JSONP script tag loaded (onload)');
+        // onloadだけでは成功とは限りません（中身がHTMLでもonloadは通るため）
+      };
+
+      s.onerror = ()=> {
+        $('status').textContent = 'データ取得に失敗しました（ネットワーク/ブロック）';
+        log('error', 'JSONP script load error', lastJsonpUrl);
+      };
+
       document.head.appendChild(s);
+
+      // callbackが呼ばれない検知（権限/HTML応答/遮断を炙り出す）
+      setTimeout(()=> {
+        if (!callbackCalled) {
+          $('status').textContent = 'データ取得に失敗しました（callback未呼び出し）';
+          log('warn', 'Callback not called within timeout. Possible causes: permission, API returns HTML, blocked, wrong URL.');
+          log('warn', 'Try opening this URL directly:', lastJsonpUrl);
+        }
+      }, 6000);
+
     })();
 
     /* ===== イベント ===== */
     $('q').addEventListener('input', scheduleSearch);
     $('limit').addEventListener('change', render);
+
+    $('btnCopyLog').addEventListener('click', async ()=>{
+      const ok = await copyText(logLines.join('\n'));
+      showToast(ok ? 'ログをコピーしました' : 'ログコピーに失敗しました');
+    });
+
+    $('btnClearLog').addEventListener('click', ()=>{
+      logLines.length = 0;
+      $('log').textContent = '（ここにログが出ます）';
+      showToast('ログをクリアしました');
+    });
+
+    $('btnPing').addEventListener('click', ()=>{
+      const u = `${API_URL}?callback=onGviz&limit=3&v=${Date.now()}`;
+      window.open(u, '_blank', 'noopener');
+      log('info', 'Open API test tab', u);
+    });
   </script>
 </body>
 </html>
