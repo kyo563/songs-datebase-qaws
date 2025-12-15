@@ -320,16 +320,29 @@
           return;
         }
 
-        const rows = payload.rows.map(r => {
+        const rawRows = payload.rows.map(r => {
           if (Array.isArray(r)) {
             return { artist: (r[0] ?? '').toString(), title: (r[1] ?? '').toString() };
           }
           return { artist: (r.artist ?? '').toString(), title: (r.title ?? '').toString() };
         }).filter(r => ((r.artist + r.title).trim() !== ''));
 
+        const seen = new Set();
+        const rows = [];
+        rawRows.forEach((r)=>{
+          const key = `${normalize(r.artist)}|${normalize(r.title)}`;
+          if (!key || seen.has(key)) return;
+          seen.add(key);
+          rows.push(r);
+        });
+
         state.rows = rows;
-        $('status').textContent = `読み込み完了：${rows.length}件`;
-        log('info', 'Loaded rows', rows.length, 'sample=', rows[0] || '(none)');
+        const dedupedCount = rows.length;
+        const removed = rawRows.length - dedupedCount;
+        $('status').textContent = removed
+          ? `読み込み完了：${dedupedCount}件（重複除去 ${removed}件）`
+          : `読み込み完了：${dedupedCount}件`;
+        log('info', 'Loaded rows', dedupedCount, 'removed=', removed, 'sample=', rows[0] || '(none)');
         render();
       } catch (e) {
         $('status').textContent = '読み込みに失敗しました';
@@ -373,6 +386,8 @@
 
       if (rows.length === 0) { hint.textContent = q ? '該当なし' : '検索結果がここに表示されます。'; return; }
       hint.textContent = '';
+
+      const isMobile = window.matchMedia('(max-width: 768px)').matches;
 
       // PC：テーブル
       const table = document.createElement('table');
@@ -425,7 +440,8 @@
         listWrap.appendChild(item);
       });
 
-      listWrap.style.display = 'block';
+      listWrap.style.display = isMobile ? 'block' : 'none';
+      tableWrap.style.display = isMobile ? 'none' : 'block';
     }
 
     /* ===== データ取得開始（JSONP） ===== */
