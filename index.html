@@ -35,7 +35,6 @@
     }
     .row { display: flex; gap: 10px; align-items: center; }
     .row > * { flex: 1; }
-    .row-controls { margin-top: 8px; }
 
     input[type="search"], select {
       width: 100%;
@@ -52,12 +51,6 @@
     .btn:focus {
       outline: 3px solid var(--focus);
       outline-offset: 2px;
-    }
-    #limit {
-      padding: 6px 10px;
-      font-size: 14px;
-      line-height: 1.2;
-      max-width: 160px;
     }
     .muted { color: var(--muted); font-size: 13px; }
 
@@ -154,13 +147,6 @@
   <div class="card">
     <div class="row">
       <input id="q" type="search" placeholder="曲名／アーティスト名で検索（例：群青日和／椎名林檎）" autocomplete="off">
-    </div>
-    <div class="row row-controls">
-      <select id="limit">
-        <option value="50">上限 50件</option>
-        <option value="100">上限 100件</option>
-        <option value="200">上限 200件</option>
-      </select>
     </div>
     <div class="muted" id="status">読み込み中…</div>
   </div>
@@ -360,8 +346,6 @@
       const hint = $('hint');
 
       const q = normalize($('q').value || '');
-      const limitSelected = parseInt($('limit').value, 10);
-      const limit = Math.min(isFinite(limitSelected) ? limitSelected : 50, HARD_LIMIT);
 
       let filtered = state.rows;
       if (q) {
@@ -369,11 +353,11 @@
           return normalize(artist).includes(q) || normalize(title).includes(q);
         });
       }
-      const rows = filtered.slice(0, limit);
+      const rows = filtered;
 
       $('status').textContent = q
-        ? `${rows.length}件ヒット（全${filtered.length}件）／表示上限 ${limit}件`
-        : `表示中 ${rows.length}件（全${state.rows.length}件）／表示上限 ${limit}件`;
+        ? `${rows.length}件ヒット（全${state.rows.length}件中）`
+        : `表示中 ${rows.length}件（全${state.rows.length}件）`;
 
       if (rows.length === 0) { hint.textContent = q ? '該当なし' : '検索結果がここに表示されます。'; return; }
       hint.textContent = '';
@@ -471,7 +455,6 @@
 
     /* ===== イベント ===== */
     $('q').addEventListener('input', scheduleSearch);
-    $('limit').addEventListener('change', render);
 
     $('btnCopyLog').addEventListener('click', async ()=>{
       const ok = await copyText(logLines.join('\n'));
