@@ -186,6 +186,7 @@
   <script>
     /* ===== 設定 ===== */
     const API_URL = 'https://script.google.com/macros/s/AKfycbz9TUzC2C2dQgUbdCX1jAXNKIb4WpalGo08Ha8jdmIZ-Gx5GX-ie-kuaC9urKATEPTp/exec';
+    const API_LIMIT = 1000;
 
     const state = { rows: [], debounce: null, sort: 'artist-asc' };
     let callbackCalled = false;
@@ -450,7 +451,7 @@
       log('info', 'Page loaded', { href: location.href, ua: navigator.userAgent });
 
       const s = document.createElement('script');
-      lastJsonpUrl = `${API_URL}?callback=onGviz&v=${Date.now()}`;
+      lastJsonpUrl = `${API_URL}?callback=onGviz&limit=${API_LIMIT}&v=${Date.now()}`;
 
       log('info', 'JSONP request start', lastJsonpUrl);
 
@@ -497,7 +498,7 @@
     });
 
     $('btnPing').addEventListener('click', ()=>{
-      const u = `${API_URL}?callback=onGviz&v=${Date.now()}`;
+      const u = `${API_URL}?callback=onGviz&limit=${API_LIMIT}&v=${Date.now()}`;
       window.open(u, '_blank', 'noopener');
       log('info', 'Open API test tab', u);
     });
